@@ -1,8 +1,8 @@
 @echo off
-title PinVault Pro - Universal Video Downloader
+title PinVault Pro - Pinterest Video Downloader
 color 0b
 echo ===================================================================
-echo               Starting PinVault Pro Full-Stack Server
+echo        Starting PinVault Pro - Pinterest Video Downloader
 echo ===================================================================
 echo.
 cd /d "%~dp0"

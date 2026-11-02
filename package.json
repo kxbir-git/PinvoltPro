@@ -1,12 +1,12 @@
 {
   "name": "pinvault-pro",
   "version": "1.0.0",
-  "description": "Universal Video Downloader (Pinterest, YouTube, Instagram, TikTok, etc.)",
+  "description": "Pinterest Video Downloader (Pins, Reels, Idea Pins, GIFs, Images)",
   "private": true,
   "scripts": {
     "dev": "node start-dev.js",
     "start": "node start-dev.js",
-    "dev:python": "python-service\\venv311\\Scripts\\python.exe -m uvicorn main:app --app-dir python-service --host 127.0.0.1 --port 8001 --reload",
+    "dev:python": "python-service\\venv\\Scripts\\python.exe -m uvicorn main:app --app-dir python-service --host 127.0.0.1 --port 8001 --reload",
     "dev:frontend": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build"
   }

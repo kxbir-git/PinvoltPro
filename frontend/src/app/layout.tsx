@@ -1,29 +1,19 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "PinVault Pro — Universal Video Downloader | Pinterest, YouTube, Instagram & More",
-  description: "Download videos from Pinterest, YouTube, Instagram, Facebook, TikTok, Twitter/X, Reddit, and Vimeo in HD quality. Free, fast, no watermarks.",
+  title: "PinVault Pro — Pinterest Video Downloader | Download Pinterest Videos & Reels in HD",
+  description: "Free and high-speed Pinterest Video Downloader. Download Pinterest videos, Reels, Idea Pins, and GIFs in 1080p Full HD with sound. No watermark, 100% free.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className="h-full antialiased">
+      <body className="min-h-full flex flex-col font-sans">{children}</body>
     </html>
   );
 }

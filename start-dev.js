@@ -10,10 +10,10 @@ console.log('\x1b[36m%s\x1b[0m', '═══════════════�
 console.log('\x1b[36m%s\x1b[0m', '   Starting PinVault Pro Full-Stack Application        ');
 console.log('\x1b[36m%s\x1b[0m', '═══════════════════════════════════════════════════════');
 
-// Locate Python executable
+// Locate Python executable (check working venv first)
 const pythonCandidates = [
-  path.join(pythonDir, 'venv311', 'Scripts', 'python.exe'),
   path.join(pythonDir, 'venv', 'Scripts', 'python.exe'),
+  path.join(pythonDir, 'venv311', 'Scripts', 'python.exe'),
   'python.exe',
   'python',
 ];

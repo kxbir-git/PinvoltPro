@@ -26,7 +26,7 @@ export async function fetchMetadata(req: Request, res: Response, next: NextFunct
 
     // Validate video URL (SSRF prevention)
     if (!validateVideoUrl(url)) {
-      throw new AppError('Invalid video URL. Supported: Pinterest, YouTube, Instagram, Facebook, TikTok, Twitter/X, Reddit, Vimeo.', 400, 'INVALID_URL');
+      throw new AppError('Invalid Pinterest URL. PinVault Pro only supports Pinterest links (pin.it or pinterest.com).', 400, 'INVALID_URL');
     }
 
     // Check cache

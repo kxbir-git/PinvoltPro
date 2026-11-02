@@ -12,7 +12,6 @@ const PYTHON_URLS = Array.from(
       'http://localhost:8001',
       'http://127.0.0.1:8000',
       'http://localhost:8000',
-      'http://python-service:8000',
     ].filter(Boolean) as string[]
   )
 );
@@ -37,7 +36,7 @@ async function ensurePythonRunning(): Promise<string | null> {
 
   if (isSpawningPython) {
     for (let i = 0; i < 8; i++) {
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 400));
       for (const url of PYTHON_URLS) {
         if (await checkHealth(url)) return url;
       }
@@ -57,13 +56,13 @@ async function ensurePythonRunning(): Promise<string | null> {
     if (!serviceDir) return null;
 
     const pythonBinaries = [
-      path.join(serviceDir, 'venv311', 'Scripts', 'python.exe'),
       path.join(serviceDir, 'venv', 'Scripts', 'python.exe'),
+      path.join(serviceDir, 'venv311', 'Scripts', 'python.exe'),
       'python.exe',
       'python',
     ];
 
-    const pythonPath = pythonBinaries.find((p) => p.startsWith('python') || fs.existsSync(p)) || 'python';
+    const pythonPath = pythonBinaries.find((p) => fs.existsSync(p)) || 'python';
 
     const sub = spawn(
       pythonPath,
@@ -78,7 +77,7 @@ async function ensurePythonRunning(): Promise<string | null> {
     sub.unref();
 
     for (let i = 0; i < 10; i++) {
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 500));
       for (const url of ['http://127.0.0.1:8001', 'http://localhost:8001']) {
         if (await checkHealth(url)) return url;
       }
@@ -92,13 +91,13 @@ async function ensurePythonRunning(): Promise<string | null> {
   }
 }
 
-// Direct stream fallback for CDN media URLs (e.g. Pinterest mp4/jpg)
-async function tryDirectStream(mediaUrl: string, filename = 'video.mp4') {
+// Direct stream fallback for Pinterest CDN media URLs (v.pinimg.com or i.pinimg.com)
+async function tryDirectStream(mediaUrl: string, filename = 'pinterest_video.mp4') {
   try {
     const res = await fetch(mediaUrl, {
       headers: {
         'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       },
       signal: AbortSignal.timeout(60000),
     });
@@ -121,11 +120,25 @@ async function tryDirectStream(mediaUrl: string, filename = 'video.mp4') {
 }
 
 async function handleDownload(url: string, quality: string) {
-  // If the URL is already a direct media file (pinimg, googlevideo, etc.)
+  const isPinterest = /^(https?:\/\/)?(([\w-]+\.)?pinterest\.(com|[a-z]{2,3}(\.[a-z]{2})?)|pin\.it|pinimg\.com)/i.test(
+    url.trim()
+  );
+
+  if (!isPinterest) {
+    return NextResponse.json(
+      {
+        detail:
+          'PinVault Pro is exclusively dedicated to Pinterest. Please provide a valid Pinterest URL.',
+      },
+      { status: 400 }
+    );
+  }
+
+  // If the URL is already a direct media file (v.pinimg.com or i.pinimg.com)
   if (url.startsWith('http') && (url.includes('.pinimg.com/videos/') || url.match(/\.(mp4|jpg|jpeg|png|webp)(\?|$)/i))) {
     const extMatch = url.match(/\.(mp4|jpg|jpeg|png|webp)(\?|$)/i);
     const ext = extMatch ? `.${extMatch[1]}` : '.mp4';
-    const directStream = await tryDirectStream(url, `download_${Date.now()}${ext}`);
+    const directStream = await tryDirectStream(url, `pinterest_download_${Date.now()}${ext}`);
     if (directStream) return directStream;
   }
 
@@ -171,7 +184,7 @@ async function handleDownload(url: string, quality: string) {
 
   return NextResponse.json(
     {
-      detail: 'Downloader backend service is not ready. Please try again in a few moments.',
+      detail: 'Downloader backend service is preparing your download. Please try again in 5 seconds.',
     },
     { status: 503 }
   );
@@ -183,7 +196,7 @@ export async function POST(req: NextRequest) {
     const { url, quality = 'best' } = body;
 
     if (!url) {
-      return NextResponse.json({ detail: 'URL is required' }, { status: 400 });
+      return NextResponse.json({ detail: 'Pinterest link is required' }, { status: 400 });
     }
 
     return await handleDownload(url, quality);
@@ -199,7 +212,7 @@ export async function GET(req: NextRequest) {
     const quality = searchParams.get('quality') || 'best';
 
     if (!url) {
-      return NextResponse.json({ detail: 'URL is required' }, { status: 400 });
+      return NextResponse.json({ detail: 'Pinterest link is required' }, { status: 400 });
     }
 
     return await handleDownload(url, quality);
