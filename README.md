@@ -3,19 +3,19 @@
 ![PinVault Pro Banner](assets/banner.png)
 
 # ⚡ PinVault Pro
-### Universal 4K Video Downloader & Converter Engine
+### Dedicated Pinterest Video, Reel & Idea Pin Downloader Engine
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.4-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.103-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Node.js](https://img.shields.io/badge/Express-4.19-green?style=for-the-badge&logo=express)](https://expressjs.com/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=for-the-badge&logo=docker)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
-  A high-performance, modern web application and microservice architecture to extract, convert, and download media from <b>1000+ platforms</b> in up to <b>4K UHD 60FPS</b> and <b>320kbps MP3</b>.
+  A high-performance, resilient web application and microservice architecture engineered to extract, package, and download <b>Pinterest Videos, Reels, Idea Pins, and GIFs</b> in <b>1080p Full HD</b> with original audio.
 </p>
 
-[Live Demo](#-live-preview) • [Features](#-key-features) • [Architecture](#-architecture) • [Getting Started](#-getting-started) • [Deployment](#-deployment)
+[Live Preview](#-live-preview) • [Features](#-key-features) • [Supported Formats](#-supported-pinterest-formats) • [Architecture](#-architecture) • [Getting Started](#-getting-started) • [Deployment](#-deployment)
 
 </div>
 
@@ -33,27 +33,29 @@
 
 ## ✨ Key Features
 
-- 🌐 **1000+ Platforms Supported**: YouTube, Instagram (Reels/Stories/Posts), TikTok (No watermark), Facebook, Twitter/X, Pinterest, Reddit, Twitch, and more.
-- 🎯 **Smart Format Extraction**: Automatically extracts 4K UHD, 1440p, 1080p Full HD, 720p, 480p MP4, and high-fidelity 320kbps MP3 audio formats.
-- ⚡ **Asynchronous Microservice Architecture**: FastAPI + yt-dlp backend with resilient streaming pipeline and real-time processing.
-- 🎨 **Next.js 16 + React 19 Frontend**: Ultra-fast responsive UI with glassmorphic cyberpunk dark mode, smooth transitions, and instant feedback.
-- 📡 **Real-time Download Progress**: Websocket & SSE supported download worker with granular progress updates.
-- 📢 **Ad-Sense & Banner Ready**: Optimized layout with native slots for Google AdSense, banners, and affiliate placements.
-- 🐳 **1-Command Docker Deployment**: Production-ready `docker-compose.yml` with Postgres, Redis, Python worker, Node.js API, Next.js UI, and Nginx.
+- 📌 **Dedicated Pinterest Extraction**: Engineered exclusively for Pinterest to guarantee 24/7 reliability and 100% uptime.
+- ⚡ **Multi-Tier API Architecture**:
+  - **Tier 1 (Official Widget API)**: Direct JSON extraction via `widgets.pinterest.com` with zero block rate.
+  - **Tier 2 (Pinterest PinResource API)**: Comprehensive metadata extraction for standard pins and multi-page Idea Pins.
+  - **Tier 3 (Web & Relay Scraper)**: Embedded JSON-LD (`VideoObject`) and Relay payload parser.
+  - **Tier 4 (HLS to MP4 Direct Mapping & FFmpeg)**: Rapid conversion of `.m3u8` streams into standalone MP4 files with synchronized audio.
+- 🎬 **1080p & 720p Full HD with Audio**: Always downloads complete video files with crystal-clear audio preserved.
+- 📱 **Idea Pins & Reels Supported**: Full extraction support for Pinterest Reels, vertical short clips, and animated GIFs.
+- 🚫 **No Watermarks**: Raw, high-bitrate media saved directly without logos, overlays, or restrictions.
+- 🎨 **Next.js 16 + React 19 Frontend**: Fast, responsive UI with real-time progress bar, ad-ready layout, and instant format selection.
+- 🛡️ **Dual-Engine Redundancy**: Next.js route handlers also include a native scraper fallback so the site remains available even during worker restarts.
 
 ---
 
-## 🌐 Supported Platforms
+## 🌐 Supported Pinterest Formats
 
-| Platform | Video (HD / 4K) | Audio (MP3) | Reels / Shorts | Stories |
-| :--- | :---: | :---: | :---: | :---: |
-| **YouTube** | ✅ Up to 4K | ✅ 320kbps | ✅ Yes | N/A |
-| **Instagram** | ✅ 1080p HD | ✅ Yes | ✅ Reels | ✅ Yes |
-| **TikTok** | ✅ No Watermark | ✅ Original Audio | ✅ Yes | N/A |
-| **Twitter / X** | ✅ Highest Bitrate | ✅ Yes | ✅ Clips | N/A |
-| **Facebook** | ✅ 1080p HD | ✅ Yes | ✅ Reels | ✅ Yes |
-| **Pinterest** | ✅ Original MP4 | ✅ Yes | ✅ Pins | N/A |
-| **Reddit** | ✅ Merged Audio+Video | ✅ Yes | ✅ Clips | N/A |
+| Format | Quality | Audio | Notes |
+| :--- | :---: | :---: | :--- |
+| **Standard Video Pins** | ✅ 1080p / 720p HD MP4 | ✅ Full Audio | Direct MP4 stream |
+| **Pinterest Reels** | ✅ Original Bitrate | ✅ Synchronized | Vertical video format |
+| **Idea Pins / Story Pins** | ✅ Multi-page HD | ✅ Yes | Extracted from story block data |
+| **High-Res Images & Pins** | ✅ Original Resolution | N/A | Raw original JPEG/PNG |
+| **Animated GIFs** | ✅ Full Animation | N/A | Preserved GIF loop |
 
 ---
 
@@ -61,13 +63,13 @@
 
 ```mermaid
 graph TD
-    User([🌐 User Browser]) -->|HTTP / WebSocket| NGINX[🛡️ Nginx Reverse Proxy]
-    NGINX -->|port 3000| Frontend[⚡ Next.js 16 Frontend]
-    NGINX -->|port 4000| Backend[🚀 Express.js API Gateway]
-    Backend -->|Job Queue| Redis[(⚡ Redis Cache & Queue)]
-    Backend -->|Store Metadata| Postgres[(🐘 PostgreSQL Database)]
-    Backend -->|Extract & Download| Python[🐍 FastAPI / yt-dlp Worker]
-    Python -->|Fetch Stream| Internet([🌍 Media Platforms YouTube/IG/TikTok])
+    User([🌐 User Browser]) -->|HTTP / Stream| NextJS[⚡ Next.js 16 Frontend & Route Handlers]
+    NextJS -->|Fast Forward| Python[🐍 FastAPI / Pinterest Worker]
+    Python -->|Tier 1| WidgetAPI[⚡ Pinterest Widget API]
+    Python -->|Tier 2| ResourceAPI[📡 Pinterest PinResource API]
+    Python -->|Tier 3| RelayScraper[📄 Relay & JSON-LD Parser]
+    Python -->|Tier 4| FFMPEG[🎬 FFmpeg HLS Stream Copy]
+    NextJS -->|Native Fallback| DirectCDN([🌍 Pinterest CDN v1.pinimg.com])
 ```
 
 ---
@@ -75,48 +77,35 @@ graph TD
 ## 🚀 Getting Started
 
 ### Prerequisites
-- [Docker](https://www.docker.com/) & Docker Compose (Recommended)
-- Or Node.js 20+, Python 3.11+, and PostgreSQL
+- Node.js 18+
+- Python 3.8+ (Python 3.11 recommended)
+- Git
 
-### Quickstart (Docker Compose)
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/kxbir-git/PinVault-Pro---Universal-Video-Downloader.git
-   cd PinVault-Pro---Universal-Video-Downloader
-   ```
-
-2. **Configure environment:**
-   ```bash
-   cp .env.example .env
-   ```
-
-3. **Start the complete stack:**
-   ```bash
-   docker compose up -d --build
-   ```
-
-4. **Access the application:**
-   - Frontend UI: `http://localhost:3000` (or `http://localhost` with Nginx)
-   - API Gateway: `http://localhost:4000`
-   - Python Downloader API: `http://localhost:8001`
-   - API Docs: `http://localhost:4000/api-docs`
+### 1-Click Startup (Recommended)
+Run the bundled Windows launcher:
+```bat
+run.bat
+```
+This automatically starts:
+- Python FastAPI microservice on `http://127.0.0.1:8001`
+- Next.js 16 frontend on `http://localhost:3000`
 
 ---
 
-## 🛠️ Local Development (Without Docker)
+## 🛠️ Manual Development Setup
 
 ### 1. Python Downloader Service
 ```bash
 cd python-service
 python -m venv venv
-# On Windows:
+
+# Windows
 .\venv\Scripts\activate
-# On Linux/macOS:
+# Linux / macOS
 source venv/bin/activate
 
 pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 ### 2. Frontend
@@ -126,27 +115,19 @@ npm install
 npm run dev
 ```
 
-### 3. Backend API Gateway
-```bash
-cd backend-api
-npm install
-npm run dev
-```
+Visit [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## ⚙️ Environment Variables
+## ⚙️ Environment Configuration
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env`:
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `PORT` | Backend API Port | `4000` |
-| `PYTHON_SERVICE_URL` | URL to Python Downloader | `http://localhost:8001` |
-| `NEXT_PUBLIC_API_URL` | Frontend API Target | `http://localhost:4000` |
-| `DATABASE_URL` | PostgreSQL Connection String | `postgresql://...` |
-| `REDIS_URL` | Redis Connection String | `redis://localhost:6379` |
-| `JWT_SECRET` | Secret key for auth tokens | `your-secret-key` |
+| `PYTHON_SERVICE_URL` | URL to Python Downloader service | `http://127.0.0.1:8001` |
+| `NEXT_PUBLIC_PYTHON_URL` | Client URL for microservice | `http://127.0.0.1:8001` |
+| `PORT` | Frontend Port | `3000` |
 
 ---
 

@@ -1,9 +1,9 @@
 # 🚀 PinVault Pro Deployment Guide
 
-Universal Video Downloader & Converter Stack:
+Pinterest Video & Reel Downloader Stack:
 - **Frontend**: Next.js 16 (React 19)
 - **Backend API**: Node.js / Express + PostgreSQL + Redis
-- **Worker / Downloader**: Python 3.11 FastAPI + yt-dlp + ffmpeg
+- **Worker / Downloader**: Python FastAPI + yt-dlp + ffmpeg
 
 ---
 
@@ -11,7 +11,7 @@ Universal Video Downloader & Converter Stack:
 
 ### 1. Frontend on Vercel (Free)
 1. Go to [vercel.com](https://vercel.com) and sign in with GitHub.
-2. Click **"Add New Project"** and select `kxbir-git/PinVault-Pro---Universal-Video-Downloader`.
+2. Click **"Add New Project"** and select `kxbir-git/PinVault-Pro-Universal-Video-Downloader`.
 3. In **Project Settings**:
    - **Root Directory**: Select `frontend`
    - **Framework Preset**: `Next.js`
@@ -23,7 +23,7 @@ Universal Video Downloader & Converter Stack:
 
 ### 2. Python Service on Render (Free)
 1. Go to [render.com](https://render.com) and create a **Web Service**.
-2. Connect your GitHub repository: `kxbir-git/PinVault-Pro---Universal-Video-Downloader`.
+2. Connect your GitHub repository: `kxbir-git/PinVault-Pro-Universal-Video-Downloader`.
 3. Configure settings:
    - **Root Directory**: `python-service`
    - **Environment**: `Docker` (or `Python 3`)
@@ -54,8 +54,8 @@ Deploy everything on a single Ubuntu / Linux VPS (DigitalOcean, AWS, Hetzner, Li
 
 ### 1. Clone & Setup
 ```bash
-git clone https://github.com/kxbir-git/PinVault-Pro---Universal-Video-Downloader.git
-cd PinVault-Pro---Universal-Video-Downloader
+git clone https://github.com/kxbir-git/PinVault-Pro-Universal-Video-Downloader.git
+cd PinVault-Pro-Universal-Video-Downloader
 cp .env.example .env
 ```
 
