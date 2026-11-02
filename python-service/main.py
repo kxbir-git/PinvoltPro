@@ -32,8 +32,7 @@ try:
 
     if not FFMPEG_PATH:
         try:
-            import 
-            
+            import imageio_ffmpeg
             raw_ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
             if raw_ffmpeg and os.path.exists(raw_ffmpeg):
                 FFMPEG_PATH = raw_ffmpeg
