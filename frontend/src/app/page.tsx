@@ -220,6 +220,7 @@ export default function Home() {
           <div className="hidden sm:flex items-center gap-2 text-sm font-medium">
             <a href="#how-it-works" className="px-4 py-2 text-slate-600 hover:text-slate-900 transition-colors rounded-full">How it works</a>
             <a href="#formats" className="px-4 py-2 text-slate-600 hover:text-slate-900 transition-colors rounded-full">Formats</a>
+            <Link href="/blog" className="px-4 py-2 text-slate-600 hover:text-slate-900 transition-colors rounded-full">Blog</Link>
             <a href="#features" className="px-4 py-2 text-slate-600 hover:text-slate-900 transition-colors rounded-full">Features</a>
           </div>
 
@@ -245,6 +246,7 @@ export default function Home() {
           <div className="sm:hidden absolute top-16 left-0 w-full bg-white border-b border-slate-100 shadow-lg px-4 py-4 flex flex-col gap-2 z-50">
             <a href="#how-it-works" onClick={() => setIsMobileMenuOpen(false)} className="px-4 py-2.5 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-medium">How it works</a>
             <a href="#formats" onClick={() => setIsMobileMenuOpen(false)} className="px-4 py-2.5 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-medium">Formats</a>
+            <Link href="/blog" onClick={() => setIsMobileMenuOpen(false)} className="px-4 py-2.5 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-medium">Blog</Link>
             <a href="#features" onClick={() => setIsMobileMenuOpen(false)} className="px-4 py-2.5 text-slate-600 hover:bg-slate-50 rounded-lg text-sm font-medium">Features</a>
           </div>
         )}
@@ -587,9 +589,10 @@ export default function Home() {
           <div>
             <h4 className="text-white font-bold mb-4">Links</h4>
             <ul className="space-y-2 text-sm">
-              <li><a href="#" className="hover:text-white transition-colors">Home</a></li>
+              <li><Link href="/" className="hover:text-white transition-colors">Home</Link></li>
               <li><a href="#how-it-works" className="hover:text-white transition-colors">How it works</a></li>
               <li><a href="#formats" className="hover:text-white transition-colors">Formats</a></li>
+              <li><Link href="/blog" className="hover:text-white transition-colors">Blog</Link></li>
               <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
             </ul>
           </div>
