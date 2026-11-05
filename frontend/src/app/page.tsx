@@ -9,6 +9,9 @@ const PINTEREST_FORMATS = [
   { name: 'Pins & GIFs', badge: 'Original Res', color: 'bg-amber-50 border-amber-100 text-amber-600', iconColor: '#D97706', desc: 'High-definition images and animated GIFs' },
 ];
 
+// Set to true whenever you want to display the advertisement slots
+const SHOW_ADS = false;
+
 interface VideoMeta {
   title: string;
   description: string;
@@ -248,16 +251,18 @@ export default function Home() {
 
       {/* Main Content Area */}
       <div className="flex-grow bg-gradient-to-b from-slate-50 to-white relative">
-        {/* Ad Placeholder (Top) */}
-        <section className="px-4 pt-6 pb-2 w-full flex justify-center">
-          <div
-            id="top-ad-slot"
-            className="w-full max-w-3xl min-h-[60px] sm:min-h-[90px] border-2 border-dashed border-slate-300 bg-slate-50/80 flex items-center justify-center rounded-xl text-slate-400 font-medium tracking-widest text-xs sm:text-sm uppercase transition-all"
-          >
-            {/* PASTE YOUR TOP AD SCRIPT OR BANNER HERE */}
-            <span>Advertisement</span>
-          </div>
-        </section>
+        {/* Ad Placeholder (Top) - Hidden until SHOW_ADS is set to true */}
+        {SHOW_ADS && (
+          <section className="px-4 pt-6 pb-2 w-full flex justify-center">
+            <div
+              id="top-ad-slot"
+              className="w-full max-w-3xl min-h-[60px] sm:min-h-[90px] border-2 border-dashed border-slate-300 bg-slate-50/80 flex items-center justify-center rounded-xl text-slate-400 font-medium tracking-widest text-xs sm:text-sm uppercase transition-all"
+            >
+              {/* PASTE YOUR TOP AD SCRIPT OR BANNER HERE */}
+              <span>Advertisement</span>
+            </div>
+          </section>
+        )}
 
         {/* Hero Section */}
         <section className="relative z-10 flex flex-col items-center justify-center px-4 pt-6 pb-14 max-w-4xl mx-auto text-center">
@@ -552,16 +557,18 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Ad Placeholder (Bottom) */}
-        <section className="px-4 py-10 w-full flex justify-center bg-white">
-          <div
-            id="bottom-ad-slot"
-            className="w-full max-w-4xl min-h-[60px] sm:min-h-[90px] border-2 border-dashed border-slate-300 bg-slate-50/80 flex items-center justify-center rounded-xl text-slate-400 font-medium tracking-widest text-xs sm:text-sm uppercase transition-all"
-          >
-            {/* PASTE YOUR BOTTOM AD SCRIPT OR BANNER HERE */}
-            <span>Advertisement</span>
-          </div>
-        </section>
+        {/* Ad Placeholder (Bottom) - Hidden until SHOW_ADS is set to true */}
+        {SHOW_ADS && (
+          <section className="px-4 py-10 w-full flex justify-center bg-white">
+            <div
+              id="bottom-ad-slot"
+              className="w-full max-w-4xl min-h-[60px] sm:min-h-[90px] border-2 border-dashed border-slate-300 bg-slate-50/80 flex items-center justify-center rounded-xl text-slate-400 font-medium tracking-widest text-xs sm:text-sm uppercase transition-all"
+            >
+              {/* PASTE YOUR BOTTOM AD SCRIPT OR BANNER HERE */}
+              <span>Advertisement</span>
+            </div>
+          </section>
+        )}
       </div>
 
       {/* Footer */}
