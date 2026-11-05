@@ -149,6 +149,29 @@ Contributions, issues, and feature requests are welcome!
 
 ---
 
+## 🔌 API & Extraction Architecture (Under the Hood)
+
+PinVault Pro does **not** rely on fragile, paid 3rd-party scraper APIs that require monthly subscriptions or break frequently. Instead, it uses an enterprise-grade multi-tier extraction pipeline:
+
+### 1. Official Pinterest Widget (Pidgets) API
+* **Endpoint:** `https://widgets.pinterest.com/v3/pidgets/pins/info/?pin_ids={PIN_ID}`
+* **How it works:** This is Pinterest's official public API used across the web to embed pins. It returns raw JSON containing video lists, story pin data (idea pins), resolutions (720p/1080p), titles, uploaders, and original CDN URLs.
+* **Benefits:** 100% free, zero IP rate-limit blocks, no API keys or accounts required, lifetime reliable.
+
+### 2. Direct Pinterest CDN Stream Architecture
+* **Servers:** `v1.pinimg.com/videos/` & `i.pinimg.com/`
+* **How it works:** Pinterest serves video streams via adaptive HLS (`.m3u8`). PinVault Pro parses the master stream and maps it directly to Pinterest's high-speed MP4 CDN mirrors (e.g. `/iht/hls/...m3u8` ➔ `/mc/720p/...mp4`).
+* **Benefits:** Downloads stream directly from Pinterest's global edge network at maximum speed with original audio fully synchronized, consuming minimal server bandwidth.
+
+### 3. Server-Side HTML & JSON-LD Fallback Scraper
+* **Mechanism:** Next.js Route Handlers inspect Pinterest's server-side rendered markup (`application/ld+json`, `VideoObject`, and `__PWS_DATA__`).
+* **Benefits:** Guarantees video extraction even if a pin is restricted in the Widget API.
+
+### 4. Optional Microservice: yt-dlp & FFmpeg
+* **Module:** `python-service/main.py` (FastAPI) provides an optional high-volume background worker with yt-dlp and FFmpeg stream-copy capabilities for VPS/Render hosting.
+
+---
+
 ## 📄 License
 
 Distributed under the **MIT License**. See `LICENSE` for more information.
