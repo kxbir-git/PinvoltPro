@@ -196,7 +196,7 @@ def _fetch_from_widget_api(pin_id: str, original_url: str) -> Optional[dict]:
         description = pin_data.get('description', '') or ''
         uploader = pin_data.get('pinner', {}).get('full_name', 'Pinterest User')
 
-        # Video list
+        # Video list - check standard videos and story pins (Idea Pins / Video Pins)
         video_url = None
         all_videos = {}
         v_obj = pin_data.get('videos', {})
@@ -220,6 +220,28 @@ def _fetch_from_widget_api(pin_id: str, original_url: str) -> Optional[dict]:
                 else:
                     video_url = hls_u
 
+        # Check story_pin_data if standard video was not found
+        if not video_url and pin_data.get('story_pin_data'):
+            def _find_media(data):
+                v_list = []
+                if isinstance(data, dict):
+                    for v in data.values():
+                        v_list.extend(_find_media(v))
+                elif isinstance(data, list):
+                    for item in data:
+                        v_list.extend(_find_media(item))
+                elif isinstance(data, str) and data.startswith('http'):
+                    if '.mp4' in data or ('.m3u8' in data and 'pinimg.com/videos/' in data):
+                        v_list.append(data)
+                return v_list
+
+            found_vids = _find_media(pin_data.get('story_pin_data'))
+            mp4s = [u for u in found_vids if '.mp4' in u]
+            if mp4s:
+                video_url = mp4s[0]
+            elif found_vids:
+                video_url = _hls_to_mp4_url(found_vids[0]) or found_vids[0]
+
         # Images
         thumbnail = None
         images = pin_data.get('images', {})
@@ -228,6 +250,23 @@ def _fetch_from_widget_api(pin_id: str, original_url: str) -> Optional[dict]:
                 if s in images and images[s].get('url'):
                     thumbnail = images[s]['url']
                     break
+
+        if not thumbnail and pin_data.get('story_pin_data'):
+            def _find_images(data):
+                img_list = []
+                if isinstance(data, dict):
+                    for v in data.values():
+                        img_list.extend(_find_images(v))
+                elif isinstance(data, list):
+                    for item in data:
+                        img_list.extend(_find_images(item))
+                elif isinstance(data, str) and data.startswith('http') and 'pinimg.com' in data:
+                    if re.search(r'\.(jpg|jpeg|png|webp)(\?|$)', data, re.I):
+                        img_list.append(data)
+                return img_list
+            story_imgs = _find_images(pin_data.get('story_pin_data'))
+            orig_imgs = [i for i in story_imgs if '/originals/' in i]
+            thumbnail = orig_imgs[0] if orig_imgs else (story_imgs[0] if story_imgs else None)
 
         if not video_url and not thumbnail:
             return None
@@ -238,14 +277,21 @@ def _fetch_from_widget_api(pin_id: str, original_url: str) -> Optional[dict]:
             formats.append({
                 'format_id': '1080p',
                 'ext': 'mp4',
-                'resolution': '1080p / 720p HD Video (MP4)',
+                'resolution': 'Download HD Video (MP4)',
                 'filesize': None,
             })
-        if thumbnail:
+            if thumbnail:
+                formats.append({
+                    'format_id': 'original_image',
+                    'ext': 'jpg',
+                    'resolution': 'Video Cover / Thumbnail (JPG)',
+                    'filesize': None,
+                })
+        elif thumbnail:
             formats.append({
                 'format_id': 'original_image',
                 'ext': 'jpg',
-                'resolution': 'Original High-Res Image' if is_image else 'Video Thumbnail',
+                'resolution': 'Download High-Res Image (JPG)',
                 'filesize': None,
             })
 
@@ -582,31 +628,45 @@ def get_pinterest_metadata(raw_url: str) -> dict:
     pin_id = _extract_pin_id(cleaned_url)
     print(f"[Pinterest] Processing: URL={cleaned_url}, Pin ID={pin_id}")
 
+    image_candidate = None
+
     # 1. Widget API (Fastest and zero block risk)
     if pin_id:
         data = _fetch_from_widget_api(pin_id, cleaned_url)
         if data:
-            print("[Pinterest] Successfully extracted via Widget API")
-            return data
+            if not data.get('_is_image'):
+                print("[Pinterest] Successfully extracted video via Widget API")
+                return data
+            image_candidate = data
 
     # 2. PinResource API
     if pin_id:
         data = _fetch_from_resource_api(pin_id, cleaned_url)
         if data:
-            print("[Pinterest] Successfully extracted via PinResource API")
-            return data
+            if not data.get('_is_image'):
+                print("[Pinterest] Successfully extracted video via PinResource API")
+                return data
+            if not image_candidate:
+                image_candidate = data
 
     # 3. Direct HTML Scraper
     data = _fetch_from_html_scrape(cleaned_url, pin_id)
     if data:
-        print("[Pinterest] Successfully extracted via HTML Scraper")
-        return data
+        if not data.get('_is_image'):
+            print("[Pinterest] Successfully extracted video via HTML Scraper")
+            return data
+        if not image_candidate:
+            image_candidate = data
 
     # 4. yt-dlp fallback
     data = _fetch_from_ytdlp(cleaned_url)
     if data:
         print("[Pinterest] Successfully extracted via yt-dlp")
         return data
+
+    if image_candidate:
+        print("[Pinterest] No video stream detected, returning image")
+        return image_candidate
 
     raise HTTPException(
         status_code=404,

@@ -16,8 +16,16 @@ interface VideoMeta {
   duration: number | null;
   uploader: string | null;
   platform: string;
-  formats: { format_id: string; ext: string; resolution: string; filesize: number | null }[];
+  formats: {
+    format_id: string;
+    ext: string;
+    resolution: string;
+    filesize: number | null;
+    download_url?: string;
+  }[];
   url: string;
+  _video_url?: string;
+  _is_image?: boolean;
 }
 
 export default function Home() {
@@ -87,13 +95,21 @@ export default function Home() {
     setIsDownloading(true);
     setDownloadingFormatId(selectedFormat);
     setDownloadProgress(null);
-    setStatus('Processing & packaging video on server... Please wait.');
+    setStatus('Processing & packaging download... Please wait.');
     setStatusType('info');
 
     try {
-      const downloadUrl = `/api/download?url=${encodeURIComponent(url.trim())}&quality=${encodeURIComponent(
-        selectedFormat
-      )}`;
+      const selectedFmt = videoMeta?.formats?.find((f) => f.format_id === selectedFormat);
+      const targetMediaUrl =
+        selectedFmt?.download_url ||
+        (selectedFormat === 'original_image'
+          ? videoMeta?.thumbnail
+          : videoMeta?._video_url || url.trim());
+      const customTitle = videoMeta?.title || 'pinterest_video';
+
+      const downloadUrl = `/api/download?url=${encodeURIComponent(
+        targetMediaUrl || url.trim()
+      )}&quality=${encodeURIComponent(selectedFormat)}&title=${encodeURIComponent(customTitle)}`;
 
       const response = await fetch(downloadUrl);
 
@@ -324,12 +340,28 @@ export default function Home() {
           {videoMeta && (
             <div className="w-full max-w-2xl mt-8 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
               <div className="flex flex-col sm:flex-row">
-                {/* Thumbnail */}
+                {/* Thumbnail with Video Indicator */}
                 {videoMeta.thumbnail && (
-                  <div className="w-full sm:w-52 h-44 sm:h-auto flex-shrink-0 bg-slate-100 relative overflow-hidden">
+                  <div className="w-full sm:w-56 h-48 sm:h-auto flex-shrink-0 bg-slate-900 relative overflow-hidden group">
                     <img src={videoMeta.thumbnail} alt={videoMeta.title} className="w-full h-full object-cover" />
+                    {!videoMeta._is_image && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/25 pointer-events-none">
+                        <div className="w-12 h-12 rounded-full bg-blue-600/95 text-white flex items-center justify-center shadow-lg transform transition-transform group-hover:scale-110">
+                          <svg className="w-6 h-6 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </div>
+                      </div>
+                    )}
+                    <div className="absolute top-2.5 left-2.5">
+                      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-sm text-white ${
+                        videoMeta._is_image ? 'bg-amber-600' : 'bg-blue-600'
+                      }`}>
+                        {videoMeta._is_image ? 'Image Pin' : 'HD Video'}
+                      </span>
+                    </div>
                     {videoMeta.duration ? (
-                      <span className="absolute bottom-2 right-2 bg-black/75 text-white text-[11px] px-2 py-0.5 rounded font-mono">
+                      <span className="absolute bottom-2 right-2 bg-black/80 text-white text-[11px] px-2 py-0.5 rounded font-mono">
                         {formatDuration(videoMeta.duration)}
                       </span>
                     ) : null}
@@ -368,22 +400,27 @@ export default function Home() {
                     <div className="flex flex-wrap gap-2 pt-1">
                       {videoMeta.formats.map((f) => {
                         const isThisBtnDownloading = isDownloading && downloadingFormatId === f.format_id;
+                        const isVideoBtn = f.ext === 'mp4' || f.format_id === '1080p';
                         return (
                           <button
                             key={f.format_id}
                             onClick={() => handleDownload(f.format_id)}
                             disabled={isDownloading}
-                            className={`px-3.5 py-2 active:scale-95 disabled:opacity-60 text-white text-xs font-semibold rounded-xl sm:rounded-full transition-all flex items-center gap-1.5 shadow-sm ${
-                              isThisBtnDownloading ? 'bg-blue-600 animate-pulse' : 'bg-slate-900 hover:bg-slate-700'
+                            className={`px-4 py-2.5 active:scale-95 disabled:opacity-60 text-white text-xs sm:text-sm font-semibold rounded-xl sm:rounded-full transition-all flex items-center gap-2 shadow-sm ${
+                              isThisBtnDownloading
+                                ? 'bg-blue-600 animate-pulse'
+                                : isVideoBtn
+                                ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25 ring-2 ring-blue-500/20'
+                                : 'bg-slate-800 hover:bg-slate-700'
                             }`}
                           >
                             {isThisBtnDownloading ? (
-                              <svg className="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                               </svg>
                             ) : (
-                              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                               </svg>
                             )}

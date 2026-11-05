@@ -11,7 +11,7 @@ const BROWSER_HEADERS: Record<string, string> = {
 
 // ── Pin-ID extractor ─────────────────────────────────────────────────
 function extractPinId(url: string): string | null {
-  const m1 = url.match(/\/pin\/(?:[^/]+-)(\d{10,})/);
+  const m1 = url.match(/\/pin\/(?:[^/]+-)?(\d{10,})/);
   if (m1) return m1[1];
   const m2 = url.match(/\/pin\/(\d+)/);
   if (m2) return m2[1];
@@ -21,8 +21,7 @@ function extractPinId(url: string): string | null {
 }
 
 // ── Resolve pin.it short links ───────────────────────────────────────
-async function resolveShortUrl(url: string): Promise<string> {
-  if (!url.includes('pin.it')) return url;
+async function resolveShortUrl(url: string): Promise<{ finalUrl: string; html?: string }> {
   try {
     const res = await fetch(url, {
       method: 'GET',
@@ -30,19 +29,79 @@ async function resolveShortUrl(url: string): Promise<string> {
       redirect: 'follow',
       signal: AbortSignal.timeout(10000),
     });
-    return res.url;
+    const html = await res.text();
+    return { finalUrl: res.url, html };
   } catch {
-    return url;
+    return { finalUrl: url };
   }
 }
 
-// ── Native Node.js Pinterest Scraper ─────────────────────────────────
+// ── Deep recursive search for media URLs in any object/array ─────────
+function extractAllMediaUrls(obj: any): { videos: string[]; images: string[] } {
+  const videos: string[] = [];
+  const images: string[] = [];
+
+  function walk(node: any) {
+    if (!node) return;
+    if (typeof node === 'string') {
+      if (node.startsWith('http')) {
+        if (
+          node.includes('.mp4') ||
+          (node.includes('pinimg.com/videos/') && node.includes('.m3u8'))
+        ) {
+          videos.push(node);
+        } else if (
+          node.match(/\.(jpg|jpeg|png|webp)(\?|$)/i) &&
+          node.includes('pinimg.com')
+        ) {
+          images.push(node);
+        }
+      }
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (typeof node === 'object') {
+      for (const key of Object.keys(node)) {
+        walk(node[key]);
+      }
+    }
+  }
+
+  walk(obj);
+  return {
+    videos: Array.from(new Set(videos)),
+    images: Array.from(new Set(images)),
+  };
+}
+
+// ── Convert HLS m3u8 URL to direct 720p MP4 URL ──────────────────────
+function hlsToMp4(hlsUrl: string): string {
+  if (!hlsUrl) return hlsUrl;
+  if (hlsUrl.includes('/iht/hls/')) {
+    return hlsUrl.replace('/iht/hls/', '/mc/720p/').replace('.m3u8', '.mp4');
+  }
+  return hlsUrl.replace(/\/hls(?:_v\d+)?\//, '/720p/').replace('.m3u8', '.mp4');
+}
+
+// ── Native Node.js Multi-Tier Pinterest Scraper ──────────────────────
 async function scrapePinterestNative(targetUrl: string) {
   try {
-    const currentUrl = await resolveShortUrl(targetUrl);
-    const pinId = extractPinId(currentUrl);
+    const resolved = await resolveShortUrl(targetUrl);
+    const currentUrl = resolved.finalUrl;
+    let html = resolved.html || '';
 
-    // Tier 1: Widget API
+    const pinId = extractPinId(currentUrl) || extractPinId(targetUrl);
+
+    let videoUrl: string | null = null;
+    let thumbnail: string | null = null;
+    let title = '';
+    let description = '';
+    let uploader = 'Pinterest';
+
+    // ── Tier 1: Widget API (handles standard pins, story pins, idea pins)
     if (pinId) {
       try {
         const widgetRes = await fetch(
@@ -51,163 +110,120 @@ async function scrapePinterestNative(targetUrl: string) {
         );
         if (widgetRes.ok) {
           const wJson = await widgetRes.json();
-          const pins =
-            wJson?.data?.pins ||
-            (Array.isArray(wJson?.data) ? wJson.data : []);
-          if (pins?.[0] && !pins[0].error) {
-            const p = pins[0];
+          const pin =
+            wJson?.data?.pins?.[0] ||
+            (Array.isArray(wJson?.data) ? wJson.data[0] : null);
 
-            // Video URL
-            let videoUrl: string | null = null;
-            const vList = p.videos?.video_list || {};
-            for (const q of ['V_720P', 'V_EXP7', 'V_480P', 'V_360P']) {
-              if (vList[q]?.url) {
-                videoUrl = vList[q].url;
-                break;
-              }
-            }
-            if (!videoUrl && vList.V_HLSV4?.url) {
-              videoUrl = vList.V_HLSV4.url
-                .replace(/\/hls(?:_v\d+)?\//, '/720p/')
-                .replace('.m3u8', '.mp4');
-            }
+          if (pin && !pin.error) {
+            title =
+              pin.description ||
+              pin.rich_metadata?.title ||
+              pin.rich_metadata?.article?.description ||
+              '';
+            description = pin.description || '';
+            uploader = pin.pinner?.full_name || uploader;
 
-            // Image URL
-            let thumbnail: string | null = null;
-            const images = p.images || {};
-            for (const s of ['orig', '736x', '564x']) {
-              if (images[s]?.url) {
-                thumbnail = images[s].url;
-                break;
-              }
+            const media = extractAllMediaUrls(pin);
+
+            // Prefer direct .mp4 first
+            const mp4 = media.videos.find((v) => v.includes('.mp4'));
+            if (mp4) {
+              videoUrl = mp4;
+            } else if (media.videos.length > 0) {
+              videoUrl = hlsToMp4(media.videos[0]);
             }
 
-            if (videoUrl || thumbnail) {
-              const title =
-                p.description ||
-                p.rich_metadata?.title ||
-                `Pinterest Pin ${pinId}`;
-              const isImage = !videoUrl;
-              return {
-                title: title.slice(0, 120),
-                description: (p.description || '').slice(0, 300),
-                thumbnail: thumbnail || videoUrl,
-                duration: 0,
-                uploader: p.pinner?.full_name || 'Pinterest',
-                view_count: p.repin_count || 0,
-                platform: 'pinterest',
-                formats: [
-                  ...(videoUrl
-                    ? [
-                        {
-                          format_id: '1080p',
-                          ext: 'mp4',
-                          resolution: '1080p / 720p HD Video (MP4)',
-                          filesize: null,
-                        },
-                      ]
-                    : []),
-                  ...(thumbnail
-                    ? [
-                        {
-                          format_id: 'original_image',
-                          ext: 'jpg',
-                          resolution: isImage
-                            ? 'Original High-Res Image'
-                            : 'Thumbnail',
-                          filesize: null,
-                        },
-                      ]
-                    : []),
-                ],
-                url: currentUrl,
-                _video_url: videoUrl || thumbnail,
-                _is_image: isImage,
-              };
-            }
+            // Extract best thumbnail
+            const origImg = media.images.find((img) => img.includes('/originals/'));
+            const x736 = media.images.find((img) => img.includes('/736x/'));
+            thumbnail = origImg || x736 || media.images[0] || null;
           }
         }
       } catch (wErr) {
-        console.warn('Widget API fetch failed:', wErr);
+        console.warn('Widget API error in Node:', wErr);
       }
     }
 
-    // Tier 2: HTML Scraper
-    const pageRes = await fetch(currentUrl, {
-      headers: BROWSER_HEADERS,
-      signal: AbortSignal.timeout(12000),
-    });
-
-    const html = (await pageRes.text())
-      .replace(/\\\//g, '/')
-      .replace(/\\u002F/g, '/');
-
-    if (pageRes.status === 404 || html.includes('"PinNotFound"')) {
-      return {
-        error: 'This Pin does not exist or has been deleted on Pinterest.',
-        status: 404,
-      };
-    }
-
-    let videoUrl: string | null = null;
-    let thumbnail: string | null = null;
-    let title = '';
-    let description = '';
-
-    // JSON-LD VideoObject
-    const ldMatches = html.match(
-      /<script type="application\/ld\+json">([\s\S]*?)<\/script>/gi
-    );
-    if (ldMatches) {
-      for (const block of ldMatches) {
-        try {
-          const raw = block.replace(/<\/?script[^>]*>/gi, '');
-          const data = JSON.parse(raw);
-          if (data['@type'] === 'VideoObject' && data.contentUrl) {
-            videoUrl = data.contentUrl;
-            title = data.name || title;
-            description = data.description || description;
-            thumbnail = data.thumbnailUrl || thumbnail;
-            break;
-          }
-        } catch {}
+    // If HTML wasn't fetched yet or video is still missing, fetch the page
+    if (!videoUrl && (!html || html.length < 500)) {
+      try {
+        const pageRes = await fetch(currentUrl, {
+          headers: BROWSER_HEADERS,
+          signal: AbortSignal.timeout(12000),
+        });
+        html = (await pageRes.text())
+          .replace(/\\\//g, '/')
+          .replace(/\\u002F/g, '/');
+      } catch (pageErr) {
+        console.warn('Page fetch error in Node:', pageErr);
       }
     }
 
-    // Direct video URLs
-    if (!videoUrl) {
-      const vMatches = html.match(
-        /https?:\/\/(?:v|v1)\.pinimg\.com\/videos\/[^\s"'<>]+?\.(?:mp4|m3u8)/g
+    // ── Tier 2: HTML Page Parsing (Fallback if Widget API didn't find video)
+    if (!videoUrl && html) {
+      // 1. Check direct .mp4 in pinimg
+      const mp4Matches = html.match(
+        /https?:\/\/[^\s"'<>]+\.pinimg\.com\/videos\/[^\s"'<>]+\.mp4/g
       );
-      if (vMatches?.length) {
-        const mp4 = vMatches.find((m) => m.includes('.mp4'));
-        videoUrl = mp4
-          ? mp4
-          : vMatches[0]
-              .replace(/\/hls(?:_v\d+)?\//, '/720p/')
-              .replace('.m3u8', '.mp4');
+      if (mp4Matches && mp4Matches.length > 0) {
+        videoUrl = mp4Matches[0];
+      }
+
+      // 2. Check m3u8 in pinimg
+      if (!videoUrl) {
+        const hlsMatches = html.match(
+          /https?:\/\/[^\s"'<>]+\.pinimg\.com\/videos\/[^\s"'<>]+\.m3u8/g
+        );
+        if (hlsMatches && hlsMatches.length > 0) {
+          videoUrl = hlsToMp4(hlsMatches[0]);
+        }
+      }
+
+      // 3. JSON-LD VideoObject
+      if (!videoUrl) {
+        const ldMatches = html.match(
+          /<script type="application\/ld\+json">([\s\S]*?)<\/script>/gi
+        );
+        if (ldMatches) {
+          for (const block of ldMatches) {
+            try {
+              const raw = block.replace(/<\/?script[^>]*>/gi, '');
+              const data = JSON.parse(raw);
+              if (data['@type'] === 'VideoObject' && data.contentUrl) {
+                videoUrl = data.contentUrl;
+                title = data.name || title;
+                description = data.description || description;
+                thumbnail = data.thumbnailUrl || thumbnail;
+                break;
+              }
+            } catch {}
+          }
+        }
+      }
+
+      // 4. OpenGraph tags
+      if (!videoUrl) {
+        const ogVid =
+          html.match(
+            /property="og:video(?::secure_url)?"\s+content="([^"]+)"/i
+          ) ||
+          html.match(
+            /content="([^"]+)"\s+property="og:video(?::secure_url)?"/i
+          );
+        if (ogVid) videoUrl = ogVid[1];
       }
     }
 
-    // og:video
-    if (!videoUrl) {
-      const ogVid =
-        html.match(
-          /property="og:video(?::secure_url)?"\s+content="([^"]+)"/i
-        ) ||
-        html.match(
-          /content="([^"]+)"\s+property="og:video(?::secure_url)?"/i
-        );
-      if (ogVid) videoUrl = ogVid[1];
+    // Thumbnail fallback from HTML
+    if (!thumbnail && html) {
+      const ogImg =
+        html.match(/property="og:image"\s+content="([^"]+)"/i) ||
+        html.match(/content="([^"]+)"\s+property="og:image"/i);
+      if (ogImg) thumbnail = ogImg[1];
     }
 
-    // og:image
-    const ogImg =
-      html.match(/property="og:image"\s+content="([^"]+)"/i) ||
-      html.match(/content="([^"]+)"\s+property="og:image"/i);
-    if (ogImg) thumbnail = ogImg[1];
-
-    if (!title) {
+    // Title fallback
+    if (!title && html) {
       const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
       if (titleMatch) {
         title = titleMatch[1].replace(/\s*[-|]\s*Pinterest\s*$/i, '').trim();
@@ -215,25 +231,43 @@ async function scrapePinterestNative(targetUrl: string) {
     }
     if (!title) title = `Pinterest Pin ${pinId || ''}`.trim();
 
-    const mediaUrl = videoUrl || thumbnail;
-    if (!mediaUrl) return null;
+    if (!videoUrl && !thumbnail) {
+      return null;
+    }
 
     const isImage = !videoUrl;
-    const formats: { format_id: string; ext: string; resolution: string; filesize: null }[] = [];
+    const formats: {
+      format_id: string;
+      ext: string;
+      resolution: string;
+      filesize: number | null;
+      download_url: string;
+    }[] = [];
+
     if (videoUrl) {
       formats.push({
         format_id: '1080p',
         ext: 'mp4',
-        resolution: '1080p / 720p HD Video (MP4)',
+        resolution: 'Download HD Video (MP4)',
         filesize: null,
+        download_url: videoUrl,
       });
-    }
-    if (thumbnail) {
+      if (thumbnail) {
+        formats.push({
+          format_id: 'original_image',
+          ext: 'jpg',
+          resolution: 'Video Cover / Thumbnail (JPG)',
+          filesize: null,
+          download_url: thumbnail,
+        });
+      }
+    } else if (thumbnail) {
       formats.push({
         format_id: 'original_image',
         ext: 'jpg',
-        resolution: isImage ? 'Original High-Res Image' : 'Thumbnail',
+        resolution: 'Download High-Res Image (JPG)',
         filesize: null,
+        download_url: thumbnail,
       });
     }
 
@@ -242,16 +276,16 @@ async function scrapePinterestNative(targetUrl: string) {
       description: description.slice(0, 300),
       thumbnail: thumbnail || videoUrl,
       duration: 0,
-      uploader: 'Pinterest',
+      uploader,
       view_count: 0,
       platform: 'pinterest',
       formats,
       url: currentUrl,
-      _video_url: mediaUrl,
+      _video_url: videoUrl || thumbnail,
       _is_image: isImage,
     };
   } catch (err: any) {
-    console.error('Pinterest scraper error:', err);
+    console.error('Pinterest native scraper error:', err);
     return null;
   }
 }
@@ -287,39 +321,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Try Python service if available (optional — Render bonus)
+    // 1. Try Python service if available (optional)
     const pyUrl = process.env.PYTHON_SERVICE_URL;
     if (pyUrl) {
       try {
         const healthRes = await fetch(`${pyUrl}/health`, {
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(2000),
         });
         if (healthRes.ok) {
           const res = await fetch(`${pyUrl}/api/metadata`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: trimmedUrl }),
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(10000),
           });
           const data = await res.json().catch(() => ({}));
-          if (res.ok && (data?.title || data?.thumbnail)) {
+          // Only return Python data if it actually found a video when applicable
+          if (res.ok && (data?.title || data?.thumbnail) && !data?._is_image) {
             return NextResponse.json(data);
           }
         }
       } catch {
-        // Python not available — continue to Node.js scraper
+        // Fall through to native Node scraper
       }
     }
 
-    // 2. Node.js native scraper (always works on Vercel)
+    // 2. Native scraper (ultra-fast, supports Idea Pins, video blocks, story pins)
     const nativeData = await scrapePinterestNative(trimmedUrl);
     if (nativeData) {
-      if ('error' in nativeData) {
-        return NextResponse.json(
-          { detail: nativeData.error },
-          { status: nativeData.status || 400 }
-        );
-      }
       return NextResponse.json(nativeData);
     }
 

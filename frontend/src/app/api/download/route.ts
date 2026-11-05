@@ -11,7 +11,7 @@ const BROWSER_HEADERS: Record<string, string> = {
 
 // ── Pin-ID extractor ─────────────────────────────────────────────────
 function extractPinId(url: string): string | null {
-  const m1 = url.match(/\/pin\/(?:[^/]+-)(\d{10,})/);
+  const m1 = url.match(/\/pin\/(?:[^/]+-)?(\d{10,})/);
   if (m1) return m1[1];
   const m2 = url.match(/\/pin\/(\d+)/);
   if (m2) return m2[1];
@@ -20,9 +20,8 @@ function extractPinId(url: string): string | null {
   return null;
 }
 
-// ── Resolve pin.it short links ───────────────────────────────────────
-async function resolveShortUrl(url: string): Promise<string> {
-  if (!url.includes('pin.it')) return url;
+// ── Resolve short links ──────────────────────────────────────────────
+async function resolveShortUrl(url: string): Promise<{ finalUrl: string; html?: string }> {
   try {
     const res = await fetch(url, {
       method: 'GET',
@@ -30,21 +29,80 @@ async function resolveShortUrl(url: string): Promise<string> {
       redirect: 'follow',
       signal: AbortSignal.timeout(10000),
     });
-    return res.url;
+    const html = await res.text();
+    return { finalUrl: res.url, html };
   } catch {
-    return url;
+    return { finalUrl: url };
   }
 }
 
-// ── Get direct video/image URL via Node.js (no Python needed) ────────
+// ── Deep recursive search for media URLs ─────────────────────────────
+function extractAllMediaUrls(obj: any): { videos: string[]; images: string[] } {
+  const videos: string[] = [];
+  const images: string[] = [];
+
+  function walk(node: any) {
+    if (!node) return;
+    if (typeof node === 'string') {
+      if (node.startsWith('http')) {
+        if (
+          node.includes('.mp4') ||
+          (node.includes('pinimg.com/videos/') && node.includes('.m3u8'))
+        ) {
+          videos.push(node);
+        } else if (
+          node.match(/\.(jpg|jpeg|png|webp)(\?|$)/i) &&
+          node.includes('pinimg.com')
+        ) {
+          images.push(node);
+        }
+      }
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (typeof node === 'object') {
+      for (const key of Object.keys(node)) {
+        walk(node[key]);
+      }
+    }
+  }
+
+  walk(obj);
+  return {
+    videos: Array.from(new Set(videos)),
+    images: Array.from(new Set(images)),
+  };
+}
+
+// ── Convert HLS to MP4 ───────────────────────────────────────────────
+function hlsToMp4(hlsUrl: string): string {
+  if (!hlsUrl) return hlsUrl;
+  if (hlsUrl.includes('/iht/hls/')) {
+    return hlsUrl.replace('/iht/hls/', '/mc/720p/').replace('.m3u8', '.mp4');
+  }
+  return hlsUrl.replace(/\/hls(?:_v\d+)?\//, '/720p/').replace('.m3u8', '.mp4');
+}
+
+// ── Get direct media URL for download ────────────────────────────────
 async function getDirectMediaUrl(
-  targetUrl: string
+  targetUrl: string,
+  quality: string
 ): Promise<{ mediaUrl: string; isImage: boolean; title: string } | null> {
   try {
-    const currentUrl = await resolveShortUrl(targetUrl);
-    const pinId = extractPinId(currentUrl);
+    const resolved = await resolveShortUrl(targetUrl);
+    const currentUrl = resolved.finalUrl;
+    let html = resolved.html || '';
 
-    // Tier 1: Widget API
+    const pinId = extractPinId(currentUrl) || extractPinId(targetUrl);
+
+    let videoUrl: string | null = null;
+    let thumbnail: string | null = null;
+    let title = '';
+
+    // 1. Try Widget API
     if (pinId) {
       try {
         const widgetRes = await fetch(
@@ -53,157 +111,135 @@ async function getDirectMediaUrl(
         );
         if (widgetRes.ok) {
           const wJson = await widgetRes.json();
-          const pins =
-            wJson?.data?.pins ||
-            (Array.isArray(wJson?.data) ? wJson.data : []);
-          if (pins?.[0] && !pins[0].error) {
-            const p = pins[0];
+          const pin =
+            wJson?.data?.pins?.[0] ||
+            (Array.isArray(wJson?.data) ? wJson.data[0] : null);
 
-            // Video URL
-            let videoUrl: string | null = null;
-            const vList = p.videos?.video_list || {};
-            for (const q of ['V_720P', 'V_EXP7', 'V_480P', 'V_360P']) {
-              if (vList[q]?.url) {
-                videoUrl = vList[q].url;
-                break;
-              }
-            }
-            if (!videoUrl && vList.V_HLSV4?.url) {
-              videoUrl = vList.V_HLSV4.url
-                .replace(/\/hls(?:_v\d+)?\//, '/720p/')
-                .replace('.m3u8', '.mp4');
+          if (pin && !pin.error) {
+            title = pin.description || pin.rich_metadata?.title || '';
+            const media = extractAllMediaUrls(pin);
+
+            const mp4 = media.videos.find((v) => v.includes('.mp4'));
+            if (mp4) {
+              videoUrl = mp4;
+            } else if (media.videos.length > 0) {
+              videoUrl = hlsToMp4(media.videos[0]);
             }
 
-            // Image URL
-            let imageUrl: string | null = null;
-            const images = p.images || {};
-            for (const s of ['orig', '736x', '564x']) {
-              if (images[s]?.url) {
-                imageUrl = images[s].url;
-                break;
-              }
-            }
-
-            const title =
-              p.description || p.rich_metadata?.title || `Pinterest Pin ${pinId}`;
-
-            if (videoUrl) {
-              return { mediaUrl: videoUrl, isImage: false, title };
-            }
-            if (imageUrl) {
-              return { mediaUrl: imageUrl, isImage: true, title };
-            }
+            const origImg = media.images.find((img) => img.includes('/originals/'));
+            const x736 = media.images.find((img) => img.includes('/736x/'));
+            thumbnail = origImg || x736 || media.images[0] || null;
           }
         }
       } catch (e) {
-        console.warn('Widget API error:', e);
+        console.warn('Widget API error in download route:', e);
       }
     }
 
-    // Tier 2: HTML scraper
-    const pageRes = await fetch(currentUrl, {
-      headers: BROWSER_HEADERS,
-      signal: AbortSignal.timeout(12000),
-    });
-    const html = (await pageRes.text())
-      .replace(/\\\//g, '/')
-      .replace(/\\u002F/g, '/');
-
-    let videoUrl: string | null = null;
-    let imageUrl: string | null = null;
-    let title = '';
-
-    // JSON-LD VideoObject
-    const ldMatches = html.match(
-      /<script type="application\/ld\+json">([\s\S]*?)<\/script>/gi
-    );
-    if (ldMatches) {
-      for (const block of ldMatches) {
-        try {
-          const raw = block.replace(/<\/?script[^>]*>/gi, '');
-          const data = JSON.parse(raw);
-          if (data['@type'] === 'VideoObject' && data.contentUrl) {
-            videoUrl = data.contentUrl;
-            title = data.name || '';
-            break;
-          }
-        } catch {}
-      }
+    // 2. Fallback to HTML scraper if video is needed but not found
+    if (!videoUrl && (!html || html.length < 500)) {
+      try {
+        const pageRes = await fetch(currentUrl, {
+          headers: BROWSER_HEADERS,
+          signal: AbortSignal.timeout(12000),
+        });
+        html = (await pageRes.text())
+          .replace(/\\\//g, '/')
+          .replace(/\\u002F/g, '/');
+      } catch {}
     }
 
-    // Direct video URLs in HTML
-    if (!videoUrl) {
-      const vMatches = html.match(
-        /https?:\/\/(?:v|v1)\.pinimg\.com\/videos\/[^\s"'<>]+?\.(?:mp4|m3u8)/g
+    if (!videoUrl && html) {
+      const mp4Matches = html.match(
+        /https?:\/\/[^\s"'<>]+\.pinimg\.com\/videos\/[^\s"'<>]+\.mp4/g
       );
-      if (vMatches?.length) {
-        const mp4 = vMatches.find((m) => m.includes('.mp4'));
-        videoUrl = mp4
-          ? mp4
-          : vMatches[0]
-              .replace(/\/hls(?:_v\d+)?\//, '/720p/')
-              .replace('.m3u8', '.mp4');
+      if (mp4Matches && mp4Matches.length > 0) {
+        videoUrl = mp4Matches[0];
+      }
+
+      if (!videoUrl) {
+        const hlsMatches = html.match(
+          /https?:\/\/[^\s"'<>]+\.pinimg\.com\/videos\/[^\s"'<>]+\.m3u8/g
+        );
+        if (hlsMatches && hlsMatches.length > 0) {
+          videoUrl = hlsToMp4(hlsMatches[0]);
+        }
+      }
+
+      if (!videoUrl) {
+        const ogVid =
+          html.match(/property="og:video(?::secure_url)?"\s+content="([^"]+)"/i) ||
+          html.match(/content="([^"]+)"\s+property="og:video(?::secure_url)?"/i);
+        if (ogVid) videoUrl = ogVid[1];
       }
     }
 
-    // og:video
-    if (!videoUrl) {
-      const ogVid =
-        html.match(
-          /property="og:video(?::secure_url)?"\s+content="([^"]+)"/i
-        ) ||
-        html.match(
-          /content="([^"]+)"\s+property="og:video(?::secure_url)?"/i
-        );
-      if (ogVid) videoUrl = ogVid[1];
+    if (!thumbnail && html) {
+      const ogImg =
+        html.match(/property="og:image"\s+content="([^"]+)"/i) ||
+        html.match(/content="([^"]+)"\s+property="og:image"/i);
+      if (ogImg) thumbnail = ogImg[1];
     }
 
-    // og:image
-    const ogImg =
-      html.match(/property="og:image"\s+content="([^"]+)"/i) ||
-      html.match(/content="([^"]+)"\s+property="og:image"/i);
-    if (ogImg) imageUrl = ogImg[1];
-
-    if (!title) {
+    if (!title && html) {
       const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
       if (titleMatch) {
         title = titleMatch[1].replace(/\s*[-|]\s*Pinterest\s*$/i, '').trim();
       }
     }
-    if (!title) title = `Pinterest Pin ${pinId || ''}`.trim();
+    if (!title) title = `pinterest_${pinId || 'media'}`;
 
-    if (videoUrl) return { mediaUrl: videoUrl, isImage: false, title };
-    if (imageUrl) return { mediaUrl: imageUrl, isImage: true, title };
+    // Quality decision:
+    // If quality requested is image:
+    if (quality === 'original_image' && thumbnail) {
+      return { mediaUrl: thumbnail, isImage: true, title };
+    }
+
+    // Default to video if available
+    if (videoUrl) {
+      return { mediaUrl: videoUrl, isImage: false, title };
+    }
+
+    // If only image available
+    if (thumbnail) {
+      return { mediaUrl: thumbnail, isImage: true, title };
+    }
 
     return null;
   } catch (err) {
-    console.error('getDirectMediaUrl error:', err);
+    console.error('getDirectMediaUrl error in download route:', err);
     return null;
   }
 }
 
-// ── Stream media from CDN ────────────────────────────────────────────
+// ── Stream media from Pinterest CDN ──────────────────────────────────
 async function streamMedia(mediaUrl: string, filename: string) {
-  const res = await fetch(mediaUrl, {
-    headers: {
-      'User-Agent': BROWSER_HEADERS['User-Agent'],
-      Referer: 'https://www.pinterest.com/',
-    },
-    signal: AbortSignal.timeout(120000),
-  });
+  try {
+    const res = await fetch(mediaUrl, {
+      headers: {
+        'User-Agent': BROWSER_HEADERS['User-Agent'],
+        Referer: 'https://www.pinterest.com/',
+      },
+      signal: AbortSignal.timeout(120000),
+    });
 
-  if (!res.ok || !res.body) return null;
+    if (!res.ok || !res.body) return null;
 
-  const headers = new Headers();
-  headers.set('Content-Disposition', `attachment; filename="${filename}"`);
-  headers.set(
-    'Content-Type',
-    res.headers.get('content-type') || 'application/octet-stream'
-  );
-  const cl = res.headers.get('content-length');
-  if (cl) headers.set('Content-Length', cl);
+    const headers = new Headers();
+    headers.set('Content-Disposition', `attachment; filename="${filename}"`);
+    headers.set(
+      'Content-Type',
+      res.headers.get('content-type') ||
+        (filename.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg')
+    );
+    const cl = res.headers.get('content-length');
+    if (cl) headers.set('Content-Length', cl);
 
-  return new NextResponse(res.body, { status: 200, headers });
+    return new NextResponse(res.body, { status: 200, headers });
+  } catch (err) {
+    console.error('streamMedia error:', err);
+    return null;
+  }
 }
 
 // ── Pinterest URL validation ─────────────────────────────────────────
@@ -213,58 +249,11 @@ function isPinterestUrl(url: string): boolean {
   );
 }
 
-// ── Optional: try Python service if available ────────────────────────
-async function tryPythonService(
-  url: string,
-  quality: string
-): Promise<NextResponse | null> {
-  const pyUrl = process.env.PYTHON_SERVICE_URL;
-  if (!pyUrl) return null;
-
-  try {
-    const healthRes = await fetch(`${pyUrl}/health`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!healthRes.ok) return null;
-  } catch {
-    return null;
-  }
-
-  try {
-    const res = await fetch(`${pyUrl}/api/download`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, quality }),
-      signal: AbortSignal.timeout(120000),
-    });
-
-    if (!res.ok || !res.body) return null;
-
-    const headers = new Headers();
-    const rawDisp = res.headers.get('content-disposition');
-    if (rawDisp) {
-      headers.set(
-        'content-disposition',
-        rawDisp.replace(/[^\x20-\x7E]/g, '_')
-      );
-    }
-    headers.set(
-      'content-type',
-      res.headers.get('content-type') || 'application/octet-stream'
-    );
-    const cl = res.headers.get('content-length');
-    if (cl) headers.set('content-length', cl);
-
-    return new NextResponse(res.body, { status: 200, headers });
-  } catch (err: any) {
-    console.warn('Python service download failed:', err?.message);
-    return null;
-  }
-}
-
 // ── Core download handler ────────────────────────────────────────────
-async function handleDownload(url: string, quality: string) {
-  if (!isPinterestUrl(url)) {
+async function handleDownload(url: string, quality: string, customTitle?: string) {
+  const cleanUrl = url.trim();
+
+  if (!isPinterestUrl(cleanUrl)) {
     return NextResponse.json(
       {
         detail:
@@ -274,33 +263,34 @@ async function handleDownload(url: string, quality: string) {
     );
   }
 
-  // 1. If URL is already a direct CDN media file → stream it
+  // 1. Direct CDN media stream (instant download when direct pinimg link is passed)
   if (
-    url.startsWith('http') &&
-    (url.includes('.pinimg.com/videos/') ||
-      url.match(/\.(mp4|jpg|jpeg|png|webp)(\?|$)/i))
+    cleanUrl.startsWith('http') &&
+    (cleanUrl.includes('pinimg.com/videos/') ||
+      cleanUrl.match(/\.(mp4|jpg|jpeg|png|webp)(\?|$)/i))
   ) {
-    const extMatch = url.match(/\.(mp4|jpg|jpeg|png|webp)(\?|$)/i);
-    const ext = extMatch ? `.${extMatch[1]}` : '.mp4';
-    const result = await streamMedia(
-      url,
-      `pinterest_download_${Date.now()}${ext}`
-    );
-    if (result) return result;
-  }
-
-  // 2. Try Python service (Render) if available — optional bonus
-  const pyResult = await tryPythonService(url, quality);
-  if (pyResult) return pyResult;
-
-  // 3. Node.js native scraper → find direct media URL → stream it
-  const media = await getDirectMediaUrl(url);
-  if (media) {
-    const ext = media.isImage ? '.jpg' : '.mp4';
-    const safeTitle = media.title
+    const extMatch = cleanUrl.match(/\.(mp4|jpg|jpeg|png|webp)(\?|$)/i);
+    const ext = extMatch ? `.${extMatch[1].toLowerCase()}` : '.mp4';
+    const safeTitle = (customTitle || 'pinterest_video')
       .replace(/[^a-zA-Z0-9_\- ]/g, '')
       .trim()
-      .slice(0, 60)
+      .slice(0, 50)
+      .replace(/\s+/g, '_');
+    const filename = `${safeTitle || 'pinterest_video'}_${Date.now()}${ext}`;
+
+    const directStream = await streamMedia(cleanUrl, filename);
+    if (directStream) return directStream;
+  }
+
+  // 2. Scrape pin and extract media URL
+  const media = await getDirectMediaUrl(cleanUrl, quality);
+  if (media) {
+    const ext = media.isImage ? '.jpg' : '.mp4';
+    const titleToUse = customTitle || media.title || 'pinterest_download';
+    const safeTitle = titleToUse
+      .replace(/[^a-zA-Z0-9_\- ]/g, '')
+      .trim()
+      .slice(0, 50)
       .replace(/\s+/g, '_');
     const filename = `${safeTitle || 'pinterest_download'}_${Date.now()}${ext}`;
 
@@ -308,11 +298,10 @@ async function handleDownload(url: string, quality: string) {
     if (result) return result;
   }
 
-  // 4. Nothing worked
   return NextResponse.json(
     {
       detail:
-        'Could not download this Pinterest content. The Pin may be private, deleted, or region-restricted. Please try a different Pinterest link.',
+        'Could not download this Pinterest content. The Pin may be private or deleted. Please try another link.',
     },
     { status: 404 }
   );
@@ -322,14 +311,14 @@ async function handleDownload(url: string, quality: string) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { url, quality = 'best' } = body;
+    const { url, quality = 'best', title } = body;
     if (!url) {
       return NextResponse.json(
         { detail: 'Pinterest link is required' },
         { status: 400 }
       );
     }
-    return await handleDownload(url, quality);
+    return await handleDownload(url, quality, title);
   } catch (err: any) {
     return NextResponse.json(
       { detail: err?.message || 'Internal server error' },
@@ -343,13 +332,15 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const url = searchParams.get('url');
     const quality = searchParams.get('quality') || 'best';
+    const title = searchParams.get('title') || undefined;
+
     if (!url) {
       return NextResponse.json(
         { detail: 'Pinterest link is required' },
         { status: 400 }
       );
     }
-    return await handleDownload(url, quality);
+    return await handleDownload(url, quality, title);
   } catch (err: any) {
     return NextResponse.json(
       { detail: err?.message || 'Internal server error' },
